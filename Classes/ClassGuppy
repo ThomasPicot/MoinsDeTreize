@@ -1,0 +1,111 @@
+import cv2
+import numpy as np
+import time
+import vimba
+
+class CameraInterface:
+    def __init__(self):
+        # Initialise le système Vimba
+        self.system = vimba.Vimba()
+        self.system.startup()
+        self.cam = None
+
+        # Connecte la caméra lors de l'initialisation
+        self.connect_camera()
+
+    def connect_camera(self):
+        # Récupère toutes les caméras disponibles
+        cameras = self.system.get_all_cameras()
+
+        # Vérifie s'il y a au moins une caméra détectée
+        if cameras:
+            # Sélectionne la première caméra détectée
+            self.cam = cameras[0]
+            print("Caméra connectée.")
+        else:
+            print("Aucune caméra détectée.")
+            return False
+        
+        # Ouvre la caméra
+        self.cam.open()
+        return True
+
+    def capture_image_with_trigger(self, timeout=1):
+        if self.cam is None:
+            print("La caméra n'est pas connectée.")
+            return None
+        
+        try:
+            # Configure le déclencheur pour la capture d'image
+            self.cam.TriggerSource = 'Line1'
+            self.cam.TriggerSelector = 'FrameStart'
+            self.cam.TriggerMode = 'On'
+
+            # Acquiert un frame
+            with self.cam.frame() as frame:
+                # Attend le déclenchement
+                time.sleep(timeout)
+
+                # Déclenche la capture d'image
+                self.cam.TriggerSoftware.send()
+
+                # Attend la capture de l'image
+                frame.wait_until_done(timeout=1000)
+
+                # Récupère les données de l'image sous forme de tableau numpy
+                image_data = np.ndarray(buffer=frame.buffer_data(),
+                                         dtype=np.uint8,
+                                         shape=(frame.height,
+                                                frame.width,
+                                                1))
+
+                return image_data
+        except Exception as e:
+            print(f"Erreur lors de la capture d'image : {e}")
+            return None
+
+    def stop_capture(self):
+        if self.cam is None:
+            print("La caméra n'est pas connectée.")
+            return
+        
+        try:
+            # Arrête la capture par déclenchement
+            self.cam.TriggerMode = 'Off'
+            print("Capture par déclenchement arrêtée.")
+        except Exception as e:
+            print(f"Erreur lors de l'arrêt de la capture par déclenchement : {e}")
+
+    def save_image(self, image_data, filename):
+        try:
+            # Enregistre l'image
+            cv2.imwrite(filename, image_data)
+            print("Image enregistrée avec succès.")
+        except Exception as e:
+            print(f"Erreur lors de l'enregistrement de l'image : {e}")
+
+    def __del__(self):
+        try:
+            # Ferme la connexion à la caméra lors de la destruction de l'objet
+            if self.cam is not None:
+                self.cam.close()
+                print("Connexion à la caméra fermée.")
+        except Exception as e:
+            print(f"Erreur lors de la fermeture de la connexion à la caméra : {e}")
+
+# Utilisation de la classe CameraInterface
+if __name__ == "__main__":
+    try:
+        camera = CameraInterface()
+
+        # Capture une image avec déclenchement pendant 5 secondes
+        image_data = camera.capture_image_with_trigger(timeout=5)
+
+        # Enregistre l'image capturée
+        if image_data is not None:
+            camera.save_image(image_data, "captured_image.jpg")
+
+        # Arrête la capture par déclenchement
+        camera.stop_capture()
+    except KeyboardInterrupt:
+        print("Interruption par l'utilisateur.")
